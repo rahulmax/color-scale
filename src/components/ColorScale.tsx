@@ -149,23 +149,26 @@ export function ColorScale() {
       const color = new Color(inputColor);
       const oklch = color.to('oklch');
       
-      // Generate colors based on the base color
+      // Define lightness values for each swatch
+      const lightnessMap = {
+        50: 0.97,    // 97% lightness
+        100: 0.93,   // 93% lightness
+        200: 0.86,   // 86% lightness
+        300: 0.79,   // 79% lightness
+        400: 0.72,   // 72% lightness
+        500: 0.65,   // 65% lightness (base color)
+        600: 0.58,   // 58% lightness
+        700: 0.51,   // 51% lightness
+        800: 0.44,   // 44% lightness
+        900: 0.37,   // 37% lightness
+        950: 0.33,   // 33% lightness
+      };
+      
+      // Generate colors based on the lightness map
       const colors = TAILWIND_SCALE.map((label) => {
-        const lightness = oklch.coords[0];
         const chroma = oklch.coords[1];
         const hue = oklch.coords[2];
-        
-        // Calculate new lightness based on the scale without bounds
-        let newLightness = lightness;
-        if (label < 500) {
-          // Lighter colors (50 to 400)
-          const factor = (500 - label) / 450; // 450 is the range from 50 to 500
-          newLightness = lightness + (1 - lightness) * factor;
-        } else if (label > 500) {
-          // Darker colors (600 to 950)
-          const factor = (label - 500) / 450; // 450 is the range from 500 to 950
-          newLightness = lightness * (1 - factor);
-        }
+        const newLightness = lightnessMap[label];
         
         const newColor = new Color('oklch', [newLightness, chroma, hue]);
         return newColor.toString({ format: 'hex' });
