@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { HexColorPicker } from 'react-colorful';
 import Color from 'colorjs.io';
+import ntc from 'ntcjs';
 import {
   Popover,
   PopoverContent,
@@ -20,6 +21,17 @@ interface HistoryState {
   hueValues: number[];
   lightnessValues: number[];
   chromaValues: number[];
+}
+
+interface SavedPalette {
+  id: string;
+  name: string;
+  colors: string[];
+  inputColor: string;
+  hueValues: number[];
+  lightnessValues: number[];
+  chromaValues: number[];
+  createdAt: number;
 }
 
 export function ColorScale() {
@@ -41,6 +53,8 @@ export function ColorScale() {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const updateTimeoutRef = useRef<NodeJS.Timeout>();
   const pendingUpdateRef = useRef<HistoryState | null>(null);
+
+  const [savedPalettes, setSavedPalettes] = useState<SavedPalette[]>([]);
 
   const pushToHistory = useCallback((state: HistoryState) => {
     // Clear any pending updates
@@ -95,8 +109,9 @@ export function ColorScale() {
         const baseColor = new Color(color);
         const oklch = baseColor.to('oklch');
         
-        const newLightness = Math.max(0, Math.min(1, oklch.coords[0] + lightnessValues[index] / 100));
-        const newChroma = Math.max(0, Math.min(0.4, oklch.coords[1] + chromaValues[index] / 100));
+        // Remove bounds on the values
+        const newLightness = oklch.coords[0] + lightnessValues[index] / 100;
+        const newChroma = oklch.coords[1] + chromaValues[index] / 100;
         const newHue = (oklch.coords[2] + hueValues[index]) % 360;
         
         const newColor = new Color('oklch', [newLightness, newChroma, newHue]);
@@ -140,16 +155,16 @@ export function ColorScale() {
         const chroma = oklch.coords[1];
         const hue = oklch.coords[2];
         
-        // Calculate new lightness based on the scale
+        // Calculate new lightness based on the scale without bounds
         let newLightness = lightness;
         if (label < 500) {
           // Lighter colors (50 to 400)
           const factor = (500 - label) / 450; // 450 is the range from 50 to 500
-          newLightness = lightness + (0.95 - lightness) * factor;
+          newLightness = lightness + (1 - lightness) * factor;
         } else if (label > 500) {
           // Darker colors (600 to 950)
           const factor = (label - 500) / 450; // 450 is the range from 500 to 950
-          newLightness = lightness * (1 - factor * 0.8); // 0.8 to keep some lightness at 950
+          newLightness = lightness * (1 - factor);
         }
         
         const newColor = new Color('oklch', [newLightness, chroma, hue]);
@@ -277,6 +292,57 @@ export function ColorScale() {
     setTimeout(updateColors, 0);
   };
 
+  // Load saved palettes from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('savedPalettes');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as SavedPalette[];
+        if (Array.isArray(parsed)) {
+          setSavedPalettes(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to parse saved palettes:', error);
+      }
+    }
+  }, []);
+
+  // Save palettes to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('savedPalettes', JSON.stringify(savedPalettes));
+  }, [savedPalettes]);
+
+  const savePalette = () => {
+    const colorName = ntc.name(inputColor)[1]; // Get the color name from NTC
+    const timestamp = new Date().toLocaleTimeString();
+    const paletteName = `${colorName} (${timestamp})`;
+
+    const newPalette: SavedPalette = {
+      id: Date.now().toString(),
+      name: paletteName,
+      colors: currentColors,
+      inputColor,
+      hueValues: [...hueValues],
+      lightnessValues: [...lightnessValues],
+      chromaValues: [...chromaValues],
+      createdAt: Date.now(),
+    };
+
+    setSavedPalettes(prev => [...prev, newPalette]);
+  };
+
+  const loadPalette = (palette: SavedPalette) => {
+    setInputColor(palette.inputColor);
+    setHueValues(palette.hueValues);
+    setLightnessValues(palette.lightnessValues);
+    setChromaValues(palette.chromaValues);
+    setCurrentColors(palette.colors);
+  };
+
+  const deletePalette = (id: string) => {
+    setSavedPalettes(prev => prev.filter(p => p.id !== id));
+  };
+
   return (
     <div className="max-w-[1000px] mx-auto p-4 space-y-4 font-['Barlow_Condensed']">
       <div className="flex items-center gap-4">
@@ -366,6 +432,9 @@ export function ColorScale() {
         <Button onClick={resetAllSliders} variant="outline">
           Reset All
         </Button>
+        <Button onClick={savePalette}>
+          Save Palette
+        </Button>
       </div>
 
       <div className="grid grid-cols-11 gap-1">
@@ -384,6 +453,47 @@ export function ColorScale() {
           </div>
         ))}
       </div>
+
+      {savedPalettes.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-medium mb-4">Saved Palettes</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {savedPalettes.map((palette) => (
+              <div key={palette.id} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium">{palette.name}</h4>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => loadPalette(palette)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      Load
+                    </Button>
+                    <Button
+                      onClick={() => deletePalette(palette.id)}
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive"
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-11 gap-1">
+                  {palette.colors.map((color, index) => (
+                    <div
+                      key={index}
+                      className="w-full h-8 rounded"
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-4 justify-center">
         <div className="flex-1">
